@@ -1,8 +1,12 @@
 from __future__ import division, print_function
 import numpy as np
 
-body25_to_joint = np.array([11, 10, 9, 12, 13, 14, 4, 3, 2, 5, 6, 7, -1,
-                            -1, -1, -1, -1, -1, -1, 0, 16, 15, 18, 17], dtype=np.int32)
+# body25_to_joint = np.array([11, 10, 9, 12, 13, 14, 4, 3, 2, 5, 6, 7, -1,
+#                             -1, -1, -1, -1, -1, -1, 0, 16, 15, 18, 17], dtype=np.int32)
+
+body25_to_joint = np.array([16, 14, 12, 11, 13, 15, 10, 8, 6, 5, 7, 9, -1,
+                            -1, -1, -1, -1, -1, -1, 0, 1, 2, 3, 4], dtype=np.int32)
+
 cam_f = 5000
 img_res = 512
 cam_c = img_res/2

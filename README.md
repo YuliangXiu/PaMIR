@@ -38,8 +38,11 @@ cd ..
 
 After that, run the following script to test the pre-trained network:
 ```bash
+# use AlphaPose to get the keypoints json
+python scripts/demo_inference.py --cfg configs/halpe_26/resnet/256x192_res50_lr1e-3_1x.yaml  --checkpoint pretrained_models/halpe26_fast_res50_256x192.pth  --indir {data_dir/images} --outdir {data_dir} --detbatch 20
+# starting PaMIR
 cd ./networks
-python main_test.py
+python main_test.py -indir {image_dir} -outdir {result_dir}
 cd ..
 ```
 This command will generate the textured reconstruction with the fitted SMPLs for the example input images in ```./network/results/test_data*/```. Note that we assume the input images are tightly cropped with the background removed and the height of the persons is about 80% of the image height (Please see the example input images we provide). 

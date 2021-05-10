@@ -33,14 +33,17 @@ import os
 import glob
 import math
 import numpy as np
+import os.path as osp
 import scipy.spatial
 import scipy.io as sio
 import pickle as pkl
+from PIL import Image
 import json
 import cv2 as cv
 import torch
 from torch.utils.data import Dataset, DataLoader
 import constant
+import random
 from .utils import load_data_list, generate_cam_Rt
 from util import obj_io
 
@@ -50,10 +53,14 @@ class TestingImgDataset(Dataset):
         super(TestingImgDataset, self).__init__()
         self.img_h = img_h
         self.img_w = img_w
+        self.ori_res = 512
         self.dataset_dir = dataset_dir
         data_list = glob.glob(os.path.join(dataset_dir, '*.png')) + glob.glob(os.path.join(dataset_dir, '*.jpg'))
         data_list = [d for d in data_list if not d.endswith('_mask.png')]
-        self.data_list = sorted(data_list)
+        
+        random.seed(1993)
+        self.data_list = random.sample(sorted(data_list), k=1)
+        
         self.len = len(self.data_list)
         self.white_bg = white_bg
 
@@ -75,6 +82,8 @@ class TestingImgDataset(Dataset):
         data_fd, img_fname = os.path.split(data_item)
 
         img = self.load_image(data_item)
+        
+        # Image.fromarray((img*255.0).astype(np.uint8)).save("test.png")
 
         return_dict = {
             'img_id': item,
@@ -82,7 +91,7 @@ class TestingImgDataset(Dataset):
             'img': torch.from_numpy(img.transpose((2, 0, 1))),
         }
 
-        kpt_fname = data_item[:-4] + '_keypoints.json'
+        kpt_fname = osp.join(self.dataset_dir, "../sep-json", osp.basename(data_item)[:-4]+".json")
         if os.path.exists(kpt_fname):
             keypoints = self.load_keypoints(kpt_fname)
             return_dict.update({'keypoints': torch.from_numpy(keypoints)})
@@ -96,7 +105,7 @@ class TestingImgDataset(Dataset):
                                 'trans': torch.from_numpy(trans),
                                 })
         else:
-            param_fname = os.path.join(data_fd, 'results', img_fname[:-4] + '_smplparams.pkl')
+            param_fname = os.path.join(data_fd, img_fname[:-4] + '_smplparams.pkl')
             if os.path.exists(param_fname):
                 pose, betas, trans, scale = self.load_smpl_parameters(param_fname)
                 return_dict.update({'betas': torch.from_numpy(betas),
@@ -105,7 +114,7 @@ class TestingImgDataset(Dataset):
                                     'trans': torch.from_numpy(trans),
                                     })
 
-        mesh_fname = os.path.join(data_fd, 'results', img_fname[:-4] + '.obj')
+        mesh_fname = os.path.join(data_fd, img_fname[:-4] + '.obj')
         if os.path.exists(mesh_fname):
             mesh_v, mesh_f = self.load_mesh_vertices(mesh_fname)
             return_dict.update({
@@ -114,27 +123,20 @@ class TestingImgDataset(Dataset):
             })
 
         return return_dict
-
+    
     def load_image(self, data_item):
-        try:
-            img = cv.imread(data_item).astype(np.uint8)
-        except:
-            raise RuntimeError('Failed to load iamge: ' + data_item)
-
-        try:
-            msk = cv.imread(data_item[:-4] + '_mask.png', cv.IMREAD_GRAYSCALE).astype(np.uint8)
-        except:
-            raise RuntimeError('Failed to load mask for: ' + data_item)
-
-        assert img.shape[0] == self.img_h and img.shape[1] == self.img_w
-        img = np.float32(cv.cvtColor(img, cv.COLOR_RGB2BGR)) / 255
-        msk = np.float32(msk) / 255
-        msk = np.reshape(msk, [self.img_h, self.img_w, 1])
-        img = img * msk
-        if self.white_bg:
-            img = img + (1 - msk)
-        # img = cv.resize(img, (self.img_w, self.img_h))
-        return img
+        
+        rgba = Image.open(data_item).convert('RGBA')
+        self.ori_res = rgba.size[0]
+        
+        rgba = rgba.resize((self.img_w, self.img_h))
+        mask = rgba.split()[-1]
+        image = np.asarray(rgba.convert('RGB'))/255.0
+        mask = np.asarray(mask)[...,None]/255.0
+        image *= mask
+        image += (1-mask)
+        
+        return image.astype(np.float32)
 
     def load_smpl_parameters(self, data_item):
         with open(data_item, 'rb') as fp:
@@ -148,20 +150,23 @@ class TestingImgDataset(Dataset):
     def load_mesh_vertices(self, data_item):
         mesh = obj_io.load_obj_data(data_item)
         return mesh['v'].astype(np.float32), mesh['f'].astype(np.int32)
-
+    
     def load_keypoints(self, data_item):
         with open(data_item) as fp:
             data = json.load(fp)
         keypoints = []
-        if 'people' in data:
-            for idx, person_data in enumerate(data['people']):
-                kp_data = np.array(person_data['pose_keypoints_2d'], dtype=np.float32)
-                kp_data = kp_data.reshape([-1, 3])
-                kp_data = kp_data[constant.body25_to_joint]      # rearrange keypoints
-                kp_data[constant.body25_to_joint < 0] *= 0.0     # remove undefined keypoints
-                kp_data[:, 0] = kp_data[:, 0]*2 / self.img_w - 1.0
-                kp_data[:, 1] = kp_data[:, 1]*2 / self.img_h - 1.0
-                keypoints.append(kp_data)
+        
+        kp_data = np.array(data['keypoints'], dtype=np.float32)
+        kp_data = kp_data.reshape([-1, 3])
+        kp_data = kp_data[constant.body25_to_joint]      # rearrange keypoints
+        kp_data[constant.body25_to_joint < 0] *= 0.0     # remove undefined keypoints
+        # kp_data[:, 0] = kp_data[:, 0]*2 / self.img_w - 1.0
+        # kp_data[:, 1] = kp_data[:, 1]*2 / self.img_h - 1.0
+        kp_data[:, 0] = kp_data[:, 0]*2 / self.ori_res - 1.0
+        kp_data[:, 1] = kp_data[:, 1]*2 / self.ori_res - 1.0
+        
+        keypoints.append(kp_data)
+        
         if len(keypoints) == 0:
             keypoints.append(np.zeros([24, 3]))
 
