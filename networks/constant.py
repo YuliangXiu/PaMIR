@@ -9,6 +9,7 @@ body25_to_joint = np.array([16, 14, 12, 11, 13, 15, 10, 8, 6, 5, 7, 9, -1,
 
 cam_f = 5000
 img_res = 512
+
 cam_c = img_res/2
 cam_R = np.eye(3, dtype=np.float32) * np.array([[1, -1, -1]], dtype=np.float32)
 cam_tz = 10.0

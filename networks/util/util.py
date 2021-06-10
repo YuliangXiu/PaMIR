@@ -65,6 +65,7 @@ def read_smpl_constants(folder):
     smpl_face_code = (smpl_vertex_code[smpl_faces[:, 0]] +
                       smpl_vertex_code[smpl_faces[:, 1]] + smpl_vertex_code[smpl_faces[:, 2]]) / 3.0
     smpl_tetras = np.loadtxt(os.path.join(folder, 'tetrahedrons.txt'), dtype=np.int32) - 1
+    
     return smpl_vertex_code, smpl_face_code, smpl_faces, smpl_tetras
 
 

@@ -108,6 +108,7 @@ class Evaluator(object):
         self.smpl_param_regressor.eval()  # lock BN and dropout
         gt_vert_cam = scale * self.tet_smpl(pose, betas) + trans
         vol = self.voxelization(gt_vert_cam)
+        # import pdb; pdb.set_trace()
         group_size = 512 * 80
         grid_ov = self.forward_infer_occupancy_value_grid_octree(img, vol, vol_res, group_size)
         vertices, simplices, normals, _ = measure.marching_cubes_lewiner(grid_ov, 0.5)
@@ -146,6 +147,7 @@ class Evaluator(object):
         vert_tetsmpl = self.tet_smpl(theta_orig, betas_orig)
         vert_tetsmpl_cam = scale * vert_tetsmpl + trans
         keypoint = self.smpl.get_joints(vert_tetsmpl_cam[:, :6890])
+        
         for i in tqdm(range(iter_num), desc='Body Fitting Optimization'):
             theta_new_ = torch.cat([theta_orig[:, :3], theta_new[:, 3:]], dim=1)
             vert_tetsmpl_new = self.tet_smpl(theta_new_, betas_new)

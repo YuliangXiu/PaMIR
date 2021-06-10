@@ -55,11 +55,15 @@ class TestingImgDataset(Dataset):
         self.img_w = img_w
         self.ori_res = 512
         self.dataset_dir = dataset_dir
-        data_list = glob.glob(os.path.join(dataset_dir, '*.png')) + glob.glob(os.path.join(dataset_dir, '*.jpg'))
+        data_list = glob.glob(os.path.join(dataset_dir, '*.png'))
         data_list = [d for d in data_list if not d.endswith('_mask.png')]
         
         random.seed(1993)
-        self.data_list = random.sample(sorted(data_list), k=1)
+        # self.data_list = random.sample(sorted(data_list), k=2)
+        self.data_list = sorted(data_list)
+        
+        # self.data_list = ["/home/yxiu/BigDisk/DCPIFu_data/cape/03375/blazerlong/images/stretch_trial1_101.png"]
+        
         
         self.len = len(self.data_list)
         self.white_bg = white_bg
@@ -91,7 +95,7 @@ class TestingImgDataset(Dataset):
             'img': torch.from_numpy(img.transpose((2, 0, 1))),
         }
 
-        kpt_fname = osp.join(self.dataset_dir, "../sep-json", osp.basename(data_item)[:-4]+".json")
+        kpt_fname = osp.join(self.dataset_dir, "../2djoints", osp.basename(data_item)[:-4]+".json")
         if os.path.exists(kpt_fname):
             keypoints = self.load_keypoints(kpt_fname)
             return_dict.update({'keypoints': torch.from_numpy(keypoints)})

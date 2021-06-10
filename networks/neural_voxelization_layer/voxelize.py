@@ -60,10 +60,14 @@ class VoxelizationFunction(Function):
         semantic_volume = torch.cuda.FloatTensor(ctx.batch_size, ctx.volume_res, ctx.volume_res, ctx.volume_res, 3).fill_(0.0)
         weight_sum_volume = torch.cuda.FloatTensor(ctx.batch_size, ctx.volume_res, ctx.volume_res, ctx.volume_res).fill_(1e-3)
         
+        # occ_volume [B, volume_res, volume_res, volume_res]
+        # semantic_volume [B, volume_res, volume_res, volume_res, 3]
+        # weight_sum_volume [B, volume_res, volume_res, volume_res]
+        
         occ_volume, semantic_volume, weight_sum_volume = voxelize_cuda.forward_semantic_voxelization(
             smpl_vertices, smpl_vertex_code, smpl_tetrahedrons,
              occ_volume, semantic_volume, weight_sum_volume, sigma)
-            
+        
         return semantic_volume
 
 class Voxelization(nn.Module):
