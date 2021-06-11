@@ -13,7 +13,9 @@ import torch.nn.functional as F
 from skimage import measure
 from tqdm import tqdm
 import scipy.io as sio
+from pdb import set_trace
 import datetime
+import trimesh
 import glob
 import logging
 import math
@@ -33,7 +35,7 @@ import constant as const
 class Evaluator(object):
     def __init__(self, device, pretrained_checkpoint, gcmr_checkpoint):
         super(Evaluator, self).__init__()
-        util.configure_logging(True, False, None)
+        util.configure_logging(False, True, None)
 
         self.device = device
 
@@ -45,9 +47,9 @@ class Evaluator(object):
         self.smpl_param_regressor = SMPLParamRegressor().to(self.device)
 
         # neural voxelization components
-        self.smpl = SMPL('./data/basicModel_neutral_lbs_10_207_0_v1.0.0.pkl').to(self.device)
-        self.tet_smpl = TetraSMPL('./data/basicModel_neutral_lbs_10_207_0_v1.0.0.pkl',
-                                  './data/tetra_smpl.npz').to(self.device)
+        self.smpl = SMPL('./data/SMPL_FEMALE.pkl').to(self.device)
+        self.tet_smpl = TetraSMPL('./data/SMPL_FEMALE.pkl',
+                                  './data/tetra_female_smpl.npz', None).to(self.device)
         smpl_vertex_code, smpl_face_code, smpl_faces, smpl_tetras = \
             util.read_smpl_constants('./data')
         self.smpl_faces = smpl_faces
@@ -77,6 +79,15 @@ class Evaluator(object):
                     logging.info('Loading %s from %s' % (model, checkpoint_file))
                     self.models_dict[model].load_state_dict(checkpoint[model])
 
+    @staticmethod
+    def projection(points, calib):
+        
+        rot = calib[:, :3, :3]
+        trans = calib[:, :3, 3:4]
+        pts = torch.baddbmm(trans, rot, points.permute(0,2,1)).permute(0,2,1)  # [B, 3, N]
+        
+        return pts
+    
     def load_pretrained_gcmr(self, model_path):
         if os.path.isdir(model_path):
             tmp = glob.glob(os.path.join(model_path, 'gcmr*.pt'))
@@ -109,6 +120,37 @@ class Evaluator(object):
         gt_vert_cam = scale * self.tet_smpl(pose, betas) + trans
         vol = self.voxelization(gt_vert_cam)
         # import pdb; pdb.set_trace()
+        group_size = 512 * 80
+        grid_ov = self.forward_infer_occupancy_value_grid_octree(img, vol, vol_res, group_size)
+        vertices, simplices, normals, _ = measure.marching_cubes_lewiner(grid_ov, 0.5)
+
+        mesh = dict()
+        mesh['v'] = vertices / vol_res - 0.5
+        mesh['f'] = simplices[:, (1, 0, 2)]
+        mesh['vn'] = normals
+        return mesh
+    
+    def test_cape_pifu(self, img, vol_res, 
+                       pose, trans, v_template, 
+                       smpl_path, tetra_path, calib):
+        
+        self.pamir_net.train()
+        self.graph_cnn.eval()  # lock BN and dropout
+        self.smpl_param_regressor.eval()  # lock BN and dropout
+        self.tet_smpl = TetraSMPL(smpl_path[0], 
+                                  tetra_path[0], 
+                                  v_template[0].detach().cpu().numpy()).to(self.device)
+        gt_vert = (self.tet_smpl(pose) + trans) * 100
+        gt_vert_cam = self.projection(gt_vert, calib) * 0.5 * torch.Tensor([1.0,-1.0,1.0]).type_as(trans)
+        smpl_sex = smpl_path[0].split("_")[-1][:-4].lower()
+        smpl_tetra = np.loadtxt(f"./data/tetrahedrons_{smpl_sex}.txt", dtype=np.int32) - 1
+        
+        # trimesh.Trimesh(gt_vert_cam[0].detach().cpu(), smpl_tetra[:,[0,2,1]]).export(
+        #     "/home/yxiu/Code/DC-PIFu/data/cape/pamir/00134-longlong-ATUsquat_trial1-000010-0-smpl.obj")
+        # set_trace()
+        
+        self.voxelization.update(smpl_tetra)
+        vol = self.voxelization(gt_vert_cam)
         group_size = 512 * 80
         grid_ov = self.forward_infer_occupancy_value_grid_octree(img, vol, vol_res, group_size)
         vertices, simplices, normals, _ = measure.marching_cubes_lewiner(grid_ov, 0.5)
@@ -303,7 +345,8 @@ class Evaluator(object):
         pts_proj = torch.from_numpy(pts_proj).unsqueeze(0).to(self.device)
         pts_group_num = (pts.size()[1] + group_size - 1) // group_size
         pts_ov = []
-        for gi in tqdm(range(pts_group_num), desc='SDF query'):
+        # for gi in tqdm(range(pts_group_num), desc='SDF query'):
+        for gi in range(pts_group_num):
             # print('Testing point group: %d/%d' % (gi + 1, pts_group_num))
             pts_group = pts[:, (gi * group_size):((gi + 1) * group_size), :]
             pts_proj_group = pts_proj[:, (gi * group_size):((gi + 1) * group_size), :]

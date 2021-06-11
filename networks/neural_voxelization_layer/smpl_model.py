@@ -63,12 +63,14 @@ class TetraSMPL(nn.Module):
     Implementation of tetrahedral SMPL model
     Modified from https://github.com/nkolot/GraphCMR/blob/master/models/smpl.py 
     """
-    def __init__(self, model_file, model_additional_file):
+    def __init__(self, model_file, model_additional_file, v_template=None):
         super(TetraSMPL, self).__init__()
         with open(model_file, 'rb') as f:
             smpl_model = pickle.load(f, encoding='iso-8859-1')
         smpl_model_addition = np.load(model_additional_file)    # addition parameters for tetrahedrons
         smpl_model.update(smpl_model_addition)
+        if v_template is not None:
+            smpl_model.update({'v_template': v_template})
         self.orig_vert_num = smpl_model['v_template'].shape[0]
         self.added_vert_num = smpl_model['v_template_added'].shape[0]
         self.total_vert_num = self.orig_vert_num + self.added_vert_num
@@ -97,7 +99,7 @@ class TetraSMPL(nn.Module):
         self.register_buffer('parent', torch.LongTensor([id_to_col[self.kintree_table[0, it].item()] for it in range(1, self.kintree_table.shape[1])]))
 
         self.pose_shape = [24, 3]
-        self.beta_shape = [10]
+        self.beta_shape = [300]
         self.translation_shape = [3]
 
         self.pose = torch.zeros(self.pose_shape)
@@ -108,11 +110,13 @@ class TetraSMPL(nn.Module):
         self.J = None
         self.R = None
         
-    def forward(self, pose, beta):
+    def forward(self, pose, beta=None):
         device = pose.device
         batch_size = pose.shape[0]
         v_template = self.v_template[None, :]
-        shapedirs = self.shapedirs.view(-1,10)[None, :].expand(batch_size, -1, -1)
+        shapedirs = self.shapedirs.view(-1,300)[None, :].expand(batch_size, -1, -1)
+        if beta is None:
+            beta = self.beta[None,...].type_as(pose)
         beta = beta[:, :, None]
         v_shaped = torch.matmul(shapedirs, beta).view(batch_size, -1, 3) + v_template
         # batched sparse matmul not supported in pytorch
@@ -157,7 +161,7 @@ class TetraSMPL(nn.Module):
         device = pose.device
         batch_size = pose.shape[0]
         v_template = self.v_template[None, :]
-        shapedirs = self.shapedirs.view(-1, 10)[None, :].expand(batch_size, -1, -1)
+        shapedirs = self.shapedirs.view(-1, 300)[None, :].expand(batch_size, -1, -1)
         beta = beta[:, :, None]
         v_shaped = torch.matmul(shapedirs, beta).view(batch_size, -1, 3) + v_template
         # batched sparse matmul not supported in pytorch
@@ -224,20 +228,21 @@ class TetraSMPL(nn.Module):
 
 
 if __name__ == '__main__':
-    smpl = TetraSMPL('../data/basicModel_neutral_lbs_10_207_0_v1.0.0.pkl', '../data/tetra_smpl.npz')
-    pose = np.random.randn(1, 72) * 0.2
-    shape = np.random.randn(1, 10) * 0.3
-    pose = torch.from_numpy(pose).float()
-    shape = torch.from_numpy(shape).float()
+    
+    v_template = np.load("/home/yxiu/BigDisk/DCPIFu_data/cape/minimal_body_shape/00134/00134_minimal.npy")
+    smpl = TetraSMPL('../data/SMPL_FEMALE.pkl', 
+                     '../data/tetra_female_smpl.npz',
+                     v_template=v_template)
+    
+    pose = np.load("/home/yxiu/BigDisk/DCPIFu_data/cape/npz/00134-longlong-athletics_trial1-000010.npz"
+                   )["pose.npy"]
+    betas = np.zeros((300,))
+    pose = torch.from_numpy(pose[None,...]).float()
+    betas = torch.from_numpy(betas[None,...]).float()
 
-    vs = smpl.forward(pose, shape)
+    vs = smpl.forward(pose, betas)
     vs = vs.detach().cpu().numpy()[0]
     ts = smpl.tetrahedrons.cpu().numpy()
-    with open('test.obj', 'w') as fp:
-        for v in vs:
-            fp.write('v %f %f %f\n' % (v[0], v[1], v[2]))
-        for t in ts + 1:
-            fp.write('f %d %d %d\n' % (t[0] + 1, t[2] + 1, t[1] + 1))
-            fp.write('f %d %d %d\n' % (t[0] + 1, t[3] + 1, t[2] + 1))
-            fp.write('f %d %d %d\n' % (t[0] + 1, t[1] + 1, t[3] + 1))
-            fp.write('f %d %d %d\n' % (t[1] + 1, t[2] + 1, t[3] + 1))
+    
+    import trimesh
+    trimesh.Trimesh(vs, ts).show()

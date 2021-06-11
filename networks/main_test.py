@@ -6,6 +6,7 @@ import pickle as pkl
 from tqdm import tqdm
 from PIL import Image
 import numpy as np
+from pdb import set_trace
 
 from util import util
 from util import obj_io
@@ -13,20 +14,19 @@ from util import obj_io
 
 def main_test_with_gt_smpl(test_img_dir, out_dir, pretrained_checkpoint, pretrained_gcmr_checkpoint):
     from evaluator import Evaluator
-    from dataloader.dataloader_testing import TestingImgLoader
+    from dataloader.dataloader_cape import TestingImgLoader
 
     os.makedirs(out_dir, exist_ok=True)
 
     device = torch.device("cuda")
-    loader = TestingImgLoader(test_img_dir, 512, 512)
+    loader = TestingImgLoader(test_img_dir)
     evaluator = Evaluator(device, pretrained_checkpoint, pretrained_gcmr_checkpoint)
     for step, batch in enumerate(tqdm(loader, desc='Testing', total=len(loader), initial=0)):
         batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-        mesh = evaluator.test_pifu(batch['img'], 256, batch['betas'], batch['pose'], batch['scale'],
-                                   batch['trans'])
-        img_dir = batch['img_dir'][0]
-        img_fname = os.path.split(img_dir)[1]
-        mesh_fname = os.path.join(out_dir, img_fname[:-4] + '.obj')
+        mesh = evaluator.test_cape_pifu(batch['image'], 256, 
+                                        batch['pose'], batch['trans'], batch['v_template'],
+                                        batch['smpl_path'], batch['tetra_path'], batch['calib'])
+        mesh_fname = os.path.join(out_dir, f"{batch['subject'][0]}-{batch['rotation'][0]}.obj")
         obj_io.save_obj_data(mesh, mesh_fname)
     print('Testing Done. ')
 
