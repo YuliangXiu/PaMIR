@@ -12,22 +12,29 @@ from util import util
 from util import obj_io
 
 
-def main_test_with_gt_smpl(test_img_dir, out_dir, pretrained_checkpoint, pretrained_gcmr_checkpoint):
+def main_test_with_gt_smpl(in_dir, out_dir, pretrained_checkpoint, pretrained_gcmr_checkpoint):
     from evaluator import Evaluator
     from dataloader.dataloader_cape import TestingImgLoader
 
     os.makedirs(out_dir, exist_ok=True)
 
     device = torch.device("cuda")
-    loader = TestingImgLoader(test_img_dir)
+    loader = TestingImgLoader(in_dir)
     evaluator = Evaluator(device, pretrained_checkpoint, pretrained_gcmr_checkpoint)
     for step, batch in enumerate(tqdm(loader, desc='Testing', total=len(loader), initial=0)):
         batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
-        mesh = evaluator.test_cape_pifu(batch['image'], 256, 
-                                        batch['pose'], batch['trans'], batch['v_template'],
-                                        batch['smpl_path'], batch['tetra_path'], batch['calib'])
-        mesh_fname = os.path.join(out_dir, f"{batch['subject'][0]}-{batch['rotation'][0]}.obj")
+        mesh = evaluator.test_cape_pifu(batch['image'], 256, batch['verts'], batch['tedra'], batch['calib'])
+        mesh_fname = os.path.join(out_dir, batch['dataset'][0], f"{batch['subject'][0]}_{batch['rotation'][0]:03d}.obj")
+        os.makedirs(os.path.dirname(mesh_fname), exist_ok=True)
         obj_io.save_obj_data(mesh, mesh_fname)
+        
+        smpl_param = {}
+        for key in batch.keys():
+            if 'smpl_' in key:
+                smpl_param[key] = batch[key][0]
+                
+        np.save(mesh_fname[:-4], smpl_param, allow_pickle=True)
+        
     print('Testing Done. ')
 
 
@@ -129,17 +136,17 @@ if __name__ == '__main__':
     parser.add_argument(
         '-indir', '--input_dir', type=str, help='path of test dir')
     parser.add_argument(
-        '-outdir', '--output_dir', type=str, help='path of test dir')
+        '-outdir', '--output_dir', type=str, default="../results/", help='path of test dir')
     
     args = parser.parse_args()
     
     
     iternum=50
-    input_image_dir = args.input_dir
+    input_dir = args.input_dir
     output_dir = args.output_dir
 
     #! NOTE: We recommend using this when accurate SMPL estimation is available (e.g., through external optimization / annotation)
-    main_test_with_gt_smpl(input_image_dir,
+    main_test_with_gt_smpl(input_dir,
                            output_dir,
                            pretrained_checkpoint='./results/pamir_geometry/checkpoints/latest.pt',
                            pretrained_gcmr_checkpoint='./results/gcmr_pretrained/gcmr_2020_12_10-21_03_12.pt')

@@ -170,7 +170,8 @@ class PamirNet(BaseNetwork):
         y_grid = pts[:, :, 1].view(batch_size, point_num, 1, 1, 1)
         z_grid = pts[:, :, 2].view(batch_size, point_num, 1, 1, 1)
         grid_3d = torch.cat([x_grid, y_grid, z_grid], dim=-1)
-
+        
+        
         for img_feat, vol_feat in zip(img_feats, vol_feats):
             pt_feat_2D = F.grid_sample(input=img_feat, grid=grid_2d,align_corners=False,
                                        mode='bilinear', padding_mode='border')

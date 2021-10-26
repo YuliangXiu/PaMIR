@@ -46,10 +46,6 @@ class Evaluator(object):
                                   const.cmr_num_layers, const.cmr_num_channels).to(self.device)
         self.smpl_param_regressor = SMPLParamRegressor().to(self.device)
 
-        # neural voxelization components
-        self.smpl = SMPL('./data/SMPL_FEMALE.pkl').to(self.device)
-        self.tet_smpl = TetraSMPL('./data/SMPL_FEMALE.pkl',
-                                  './data/tetra_female_smpl.npz', None).to(self.device)
         smpl_vertex_code, smpl_face_code, smpl_faces, smpl_tetras = \
             util.read_smpl_constants('./data')
         self.smpl_faces = smpl_faces
@@ -59,7 +55,7 @@ class Evaluator(object):
                                          smooth_kernel_size=const.smooth_kernel_size,
                                          batch_size=1).to(self.device)
 
-        # PIFU
+        # PIFu
         self.pamir_net = PamirNet().to(self.device)
         self.models_dict = {'pamir_net': self.pamir_net}
         self.load_pretrained(checkpoint_file=pretrained_checkpoint)
@@ -130,35 +126,23 @@ class Evaluator(object):
         mesh['vn'] = normals
         return mesh
     
-    def test_cape_pifu(self, img, vol_res, 
-                       pose, trans, v_template, 
-                       smpl_path, tetra_path, calib):
+    def test_cape_pifu(self, img, vol_res, verts, tedra, calib):
         
         self.pamir_net.train()
         self.graph_cnn.eval()  # lock BN and dropout
         self.smpl_param_regressor.eval()  # lock BN and dropout
-        self.tet_smpl = TetraSMPL(smpl_path[0], 
-                                  tetra_path[0], 
-                                  v_template[0].detach().cpu().numpy()).to(self.device)
-        gt_vert = (self.tet_smpl(pose) + trans) * 100
-        gt_vert_cam = self.projection(gt_vert, calib) * 0.5 * torch.Tensor([1.0,-1.0,1.0]).type_as(trans)
-        smpl_sex = smpl_path[0].split("_")[-1][:-4].lower()
-        smpl_tetra = np.loadtxt(f"./data/tetrahedrons_{smpl_sex}.txt", dtype=np.int32) - 1
+        gt_vert_cam = self.projection(verts, calib) * 0.5 * torch.Tensor([1.0,-1.0,1.0]).type_as(verts)
         
-        # trimesh.Trimesh(gt_vert_cam[0].detach().cpu(), smpl_tetra[:,[0,2,1]]).export(
-        #     "/home/yxiu/Code/DC-PIFu/data/cape/pamir/00134-longlong-ATUsquat_trial1-000010-0-smpl.obj")
-        # set_trace()
-        
-        self.voxelization.update(smpl_tetra)
+        self.voxelization.update(tedra)
         vol = self.voxelization(gt_vert_cam)
         group_size = 512 * 80
         grid_ov = self.forward_infer_occupancy_value_grid_octree(img, vol, vol_res, group_size)
-        vertices, simplices, normals, _ = measure.marching_cubes_lewiner(grid_ov, 0.5)
+        vertices, simplices, normals, _ = measure.marching_cubes(grid_ov, 0.5)
 
         mesh = dict()
-        mesh['v'] = vertices / vol_res - 0.5
+        mesh['v'] = 2.0 * (vertices / vol_res - 0.5)
         mesh['f'] = simplices[:, (1, 0, 2)]
-        mesh['vn'] = normals
+        mesh['vc'] = 0.5 * (normals + 1.0)
         return mesh
 
     def optm_smpl_param(self, img, keypoint, betas, pose, scale, trans, iter_num):
@@ -241,7 +225,7 @@ class Evaluator(object):
         pts_proj[:, 0] = pts_proj[:, 0] * cam_f / pts_proj[:, 2] / (img_res / 2)
         pts_proj[:, 1] = pts_proj[:, 1] * cam_f / pts_proj[:, 2] / (img_res / 2)
         pts_proj = pts_proj[:, :2]
-
+        
         return pts, pts_proj
 
     def forward_gcmr(self, img):

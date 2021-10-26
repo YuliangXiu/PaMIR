@@ -101,8 +101,8 @@ class Voxelization(nn.Module):
         self.register_buffer('smpl_tetraderon_indices_batch', smpl_tetraderon_indices_batch)
         
     def update(self, smpl_tetra):
-        smpl_tetraderon_indices_batch = np.tile(smpl_tetra, (self.batch_size, 1, 1))
-        smpl_tetraderon_indices_batch = torch.from_numpy(smpl_tetraderon_indices_batch).contiguous()
+        smpl_tetraderon_indices_batch = torch.tile(smpl_tetra, (1, 1)).contiguous()
+        # smpl_tetraderon_indices_batch = torch.from_numpy(smpl_tetraderon_indices_batch).contiguous()
         self.smpl_tetraderon_indices_batch = smpl_tetraderon_indices_batch.type_as(
             self.smpl_tetraderon_indices_batch)
         

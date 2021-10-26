@@ -4,6 +4,9 @@ dataset_example_bk/
 *.7z
 *.tar
 *.pyc
+*.txt
+*.npy
+*.pkl
 __pycache__/
 .idea/
 .vscode/
